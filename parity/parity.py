@@ -183,8 +183,8 @@ def note_stats(ref, got):
         # where they diverge: unmatched notes by time
         um_r = sorted(set(range(n_r)) - set(i.tolist()))
         um_g = sorted(set(range(n_g)) - set(j.tolist()))
-        s["only_ref"] = [[round(ref[k, 0], 3), int(ref[k, 2])] for k in um_r[:12]]
-        s["only_js"] = [[round(got[k, 0], 3), int(got[k, 2])] for k in um_g[:12]]
+        s["only_ref"] = [[round(float(ref[k, 0]), 3), int(ref[k, 2])] for k in um_r[:12]]
+        s["only_js"] = [[round(float(got[k, 0]), 3), int(got[k, 2])] for k in um_g[:12]]
     return s
 
 
