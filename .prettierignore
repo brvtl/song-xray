@@ -1,0 +1,9 @@
+node_modules/
+vendor/
+web/vendor/
+web/models/
+fixtures/
+.venv/
+package-lock.json
+run.log
+PROMPT.md

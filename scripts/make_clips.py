@@ -5,6 +5,7 @@
 The clips are simple additive / FM / noise synthesis. They are not realistic recordings: they exist so the parity check and the
 demo have something reproducible to run on. Real recordings are a better test of quality; see README.
 """
+
 from __future__ import annotations
 
 import json
@@ -74,23 +75,23 @@ def hat(vel, rng):
     n = int(0.06 * SR)
     t = np.arange(n) / SR
     x = rng.standard_normal(n)
-    x = np.diff(np.concatenate([[0], x]))          # crude high-pass
+    x = np.diff(np.concatenate([[0], x]))  # crude high-pass
     return vel * 0.35 * x * np.exp(-t * 60)
 
 
 def place(buf, x, t0):
     i = int(t0 * SR)
     j = min(len(buf), i + len(x))
-    buf[i:j] += x[:j - i]
+    buf[i:j] += x[: j - i]
 
 
-def clip_band(seconds=12.0, bpm=100):
+def clip_band(seconds=24.0, bpm=110):
     """Piano chords + FM bass + flute melody + drum kit."""
     rng = np.random.default_rng(1)
     beat = 60 / bpm
     buf = np.zeros(int(seconds * SR) + SR)
     truth = {"piano": [], "bass": [], "flute": [], "drums": []}
-    prog = [(57, [57, 60, 64]), (53, [53, 57, 60]), (48, [48, 52, 55]), (55, [55, 59, 62])]   # Am F C G
+    prog = [(57, [57, 60, 64]), (53, [53, 57, 60]), (48, [48, 52, 55]), (55, [55, 59, 62])]  # Am F C G
     melody = [76, 74, 72, 74, 76, 76, 76, None, 74, 74, 74, None, 76, 79, 79, None]
     nbeats = int(seconds / beat)
     for b in range(nbeats):
@@ -111,7 +112,7 @@ def clip_band(seconds=12.0, bpm=100):
         for h in (0, 0.5):
             place(buf, hat(0.6, rng), t + h * beat)
             truth["drums"].append([t + h * beat, t + h * beat + 0.1, 42])
-    return buf[:int(seconds * SR)], truth
+    return buf[: int(seconds * SR)], truth
 
 
 def clip_piano(seconds=10.0):
@@ -129,27 +130,29 @@ def clip_piano(seconds=10.0):
         if i % 12 == 0:
             place(buf, piano(p - 24, 2.4, 0.3), t)
             truth["piano"].append([t, t + 2.4, p - 24])
-    return buf[:int(seconds * SR)], truth
+    return buf[: int(seconds * SR)], truth
 
 
-def clip_duet(seconds=10.0):
+def clip_duet(seconds=20.0):
     """Flute melody over FM bass, no drums: two clearly different timbres."""
     buf = np.zeros(int(seconds * SR) + SR)
     truth = {"flute": [], "bass": []}
     mel = [72, 74, 76, 77, 79, 77, 76, 74, 72, 71, 72, 74, 76, 74, 72, 72]
-    for i, p in enumerate(mel):
+    for i in range(int(seconds / 0.3)):
+        t = i * 0.3
+        if t + 0.28 > seconds:
+            break
+        p = mel[i % len(mel)]
+        place(buf, flute(p, 0.28, 0.2), t)
+        truth["flute"].append([t, t + 0.28, p])
+    for i in range(int(seconds / 0.6)):
         t = i * 0.6
         if t + 0.55 > seconds:
             break
-        place(buf, flute(p, 0.55, 0.2), t)
-        truth["flute"].append([t, t + 0.55, p])
-    for i, p in enumerate([48, 43, 45, 41, 48, 43, 45, 41]):
-        t = i * 1.2
-        if t + 1.1 > seconds:
-            break
-        place(buf, bass(p, 1.1, 0.4), t)
-        truth["bass"].append([t, t + 1.1, p])
-    return buf[:int(seconds * SR)], truth
+        p = [48, 43, 45, 41][(i // 2) % 4]
+        place(buf, bass(p, 0.55, 0.4), t)
+        truth["bass"].append([t, t + 0.55, p])
+    return buf[: int(seconds * SR)], truth
 
 
 def main():

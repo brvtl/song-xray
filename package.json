@@ -7,5 +7,17 @@
   "type": "module",
   "dependencies": {
     "onnxruntime-web": "^1.31.1"
+  },
+  "devDependencies": {
+    "@eslint/js": "^10.0.1",
+    "eslint": "^10.15.0",
+    "globals": "^17.14.0",
+    "prettier": "^3.10.1"
+  },
+  "scripts": {
+    "test": "node --test --test-concurrency=1 tests/*.test.mjs",
+    "lint": "eslint . && prettier --check .",
+    "format": "prettier --write .",
+    "serve": "node scripts/serve.mjs"
   }
 }
