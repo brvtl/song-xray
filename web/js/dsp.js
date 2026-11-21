@@ -355,20 +355,28 @@ const PCEN = { s: 0.025, alpha: 0.98, delta: 2.0, r: 0.5, eps: 1e-6, K: 200 };
  * The FFT-convolution plan of pcen for T frames: length n = 2^ceil(log2(T + K)), the kernel s (1 - s)^k (k < K, float32 as
  * torch builds it) and its float32 spectrum, plus float32 scratch.
  */
+let PCEN_FLOAT = Float32Array;
+
+/** Storage precision of the pcen FFT convolution: "float32" (default) or "float64" (for experiments). */
+export function setPcenPrecision(p) {
+  PCEN_FLOAT = p === "float64" ? Float64Array : Float32Array;
+}
+
 function pcenPlan(T) {
   const { s, K } = PCEN;
   const n = 1 << Math.ceil(Math.log2(T + K));
   const rf = new RealFFT(n);
   const h = n / 2;
-  const k = new Float32Array(n);
+  const Arr = PCEN_FLOAT;
+  const k = new Arr(n);
   const base = fr(1 - s);
   for (let j = 0; j < K; j++) k[j] = fr(fr(s) * fr(base ** j));
-  const kr = new Float32Array(h + 1);
-  const ki = new Float32Array(h + 1);
-  const zr = new Float32Array(h);
-  const zi = new Float32Array(h);
+  const kr = new Arr(h + 1);
+  const ki = new Arr(h + 1);
+  const zr = new Arr(h);
+  const zi = new Arr(h);
   rf.forward(k, kr, ki, zr, zi);
-  return { n, rf, kr, ki, zr, zi, x: new Float32Array(n), re: new Float32Array(h + 1), im: new Float32Array(h + 1) };
+  return { n, rf, kr, ki, zr, zi, x: new Arr(n), re: new Arr(h + 1), im: new Arr(h + 1) };
 }
 
 /**
