@@ -103,7 +103,9 @@ async function pitched(rt, x, meta, opts, progress) {
     const dm = EV.decodeMaps(maps, th);
     const { k, order } = EV.inputNotes(dm.res);
     const t0 = j * BLOCK_S;
-    const lo = lowerBound(k.on, t0);
+    // block 0 also takes notes with a (slightly) negative onset: the reference puts them in no repairer window, so they pass
+    // through unchanged (edits() leaves them NaN, as in the reference)
+    const lo = j === 0 ? 0 : lowerBound(k.on, t0);
     const hi = lowerBound(k.on, t0 + BLOCK_S);
     if (hi <= lo) return;
     const sel = Array.from(order.subarray(lo, hi));
