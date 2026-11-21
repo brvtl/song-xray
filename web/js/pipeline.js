@@ -223,14 +223,16 @@ async function pitched(rt, x, meta, opts, progress) {
   const on = new Float64Array(N);
   const off = new Float64Array(N);
   const pitch = new Int32Array(N);
-  const conf = new Float64Array(N);
+  const conf = new Float32Array(N);
   for (let i = 0; i < N; i++) {
     on[i] = metaArr[12 * i];
     off[i] = metaArr[12 * i + 1];
     pitch[i] = roundHalfEven(metaArr[12 * i + 2]);
     conf[i] = metaArr[12 * i + 3] > 0.5 ? metaArr[12 * i + 5] : metaArr[12 * i + 4];
   }
-  const groups = N ? GR.decode(pred, { on, off, pitch }, await trackHead(rt, meta), gcfg) : [];
+  const groups = N
+    ? GR.decode(pred, [on, off, pitch], await trackHead(rt, meta), meta.grouper.decode, meta.instruments.credit)
+    : [];
   const onR = on.map((v) => v * tun.r);
   const offR = off.map((v) => v * tun.r);
   const tracks = GR.tracks(onR, offR, pitch, conf, groups, meta.instruments);
@@ -259,20 +261,14 @@ function concatMaps(maps, T) {
 /** The transcriber's own notes on the sub-average maps, as [on, off, pitch, slot 0/1] rows (assign_slots' input). */
 function ownNotes(smaps, th) {
   const tn = transcriberNotes(smaps, th);
-  const n = tn.onset.length;
-  const own = new Float64Array(n * 4);
-  for (let i = 0; i < n; i++) {
-    own[4 * i] = tn.onset[i];
-    own[4 * i + 1] = tn.offset[i];
-    own[4 * i + 2] = tn.pitch[i];
-    own[4 * i + 3] = tn.slot[i] - 1;
-  }
+  const own = [];
+  for (let i = 0; i < tn.onset.length; i++) own.push([tn.onset[i], tn.offset[i], tn.pitch[i], tn.slot[i] - 1]);
   return own;
 }
 
 let _trackHead = null;
 async function trackHead(rt, meta) {
-  if (!_trackHead) _trackHead = GR.parseTrackHead(await rt.asset("track_head.bin"), meta.grouper.track_head_shapes);
+  if (!_trackHead) _trackHead = GR.loadTrackHead(await rt.asset("track_head.bin"), meta.grouper.track_head_shapes);
   return _trackHead;
 }
 
