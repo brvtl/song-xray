@@ -332,7 +332,9 @@ export async function transcribe(rt, audio, rate, opts) {
     info.drums = { hits: d.hits.length, ...d.info };
     lap("drums");
   } else {
-    info.drums = `skipped: source recorded at ${sourceRate} Hz (the drum model needs >= ${MIN_SOURCE_RATE} Hz)`;
+    info.drums = opts.skipDrums
+      ? "skipped: the source's sample rate is unknown for this format (the drum model needs >= 40 kHz; use wav or mp3)"
+      : `skipped: source recorded at ${sourceRate} Hz (the drum model needs >= ${MIN_SOURCE_RATE} Hz)`;
   }
   info.timings = timings;
   progress("done", "Done", 1, 1);

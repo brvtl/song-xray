@@ -6,7 +6,7 @@
 // arithmetic is kept: each window's contribution is rounded to float16 and added to the float16 sum, and a frame is divided by its
 // float16 weight sum once no later window can touch it. Frames the pipeline has finished with are released.
 //
-// The six probability maps are small (T x 88 floats each) and are kept for the whole song, for both averages.
+// The six probability maps (T x 88 float32 each, ~250 KB per second of audio for both averages) are kept for the whole song.
 
 import { F16_TABLE, toF16, roundF16 } from "./f16.js";
 
@@ -15,26 +15,29 @@ export const C_TAP = 368;
 const ROW = N_KEYS * C_TAP;
 export const HEADS = ["onset", "frame", "offset", "onset2", "frame2", "offset2"];
 
-/** One Hann-weighted average of the six maps (whole song, float64 sums). */
+/**
+ * One Hann-weighted average of the six maps over the whole song. As in the reference (float32 torch tensors), the weighted sums
+ * are accumulated in float32 and divided in place once a frame is final: 2.1 KB per frame per average (~250 KB per second of
+ * audio for both averages).
+ */
 class MapAverage {
   constructor(T) {
     this.T = T;
-    this.sum = HEADS.map(() => new Float64Array(T * N_KEYS));
-    this.wsum = new Float64Array(T);
     this.out = HEADS.map(() => new Float32Array(T * N_KEYS));
+    this.wsum = new Float32Array(T);
     this.final = 0; // frames [0, final) are divided and valid in `out`
   }
 
   /** probs: Float32Array [6][Fw][88] of one window; frames a..b of the song are window frames a-g0..b-g0. */
   add(probs, Fw, g0, a, b, wt) {
     for (let h = 0; h < HEADS.length; h++) {
-      const s = this.sum[h];
+      const s = this.out[h];
       const base = h * Fw * N_KEYS;
       for (let t = a; t < b; t++) {
         const w = wt[t - g0];
         const src = base + (t - g0) * N_KEYS;
         const dst = t * N_KEYS;
-        for (let l = 0; l < N_KEYS; l++) s[dst + l] += probs[src + l] * w;
+        for (let l = 0; l < N_KEYS; l++) s[dst + l] += Math.fround(probs[src + l] * w);
       }
     }
     for (let t = a; t < b; t++) this.wsum[t] += wt[t - g0];
@@ -43,17 +46,16 @@ class MapAverage {
   finalize(upto) {
     upto = Math.min(upto, this.T);
     for (let h = 0; h < HEADS.length; h++) {
-      const s = this.sum[h];
       const o = this.out[h];
       for (let t = this.final; t < upto; t++) {
-        const ws = Math.max(Math.fround(this.wsum[t]), 1e-6);
-        for (let l = 0; l < N_KEYS; l++) o[t * N_KEYS + l] = s[t * N_KEYS + l] / ws;
+        const ws = Math.max(this.wsum[t], 1e-6);
+        for (let l = 0; l < N_KEYS; l++) o[t * N_KEYS + l] /= ws;
       }
     }
     this.final = Math.max(this.final, upto);
   }
 
-  /** {onset, frame, ...} views of the finished maps (frames beyond `final` are still zero). */
+  /** {onset, frame, ...} views of the maps (frames beyond `final` still hold partial sums). */
   maps() {
     const m = {};
     HEADS.forEach((h, i) => (m[h] = this.out[i]));

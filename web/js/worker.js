@@ -19,7 +19,8 @@ async function fetchBytes(name, onBytes) {
   const res = await fetch(new URL(name, MODELS));
   if (!res.ok) throw new Error(`could not load ${name}: HTTP ${res.status} (did you run scripts/setup.sh?)`);
   const total = Number(res.headers.get("Content-Length")) || 0;
-  if (!res.body || !total) return new Uint8Array(await res.arrayBuffer());
+  // a compressing server's Content-Length is the compressed size: no byte-level progress then
+  if (!res.body || !total || res.headers.get("Content-Encoding")) return new Uint8Array(await res.arrayBuffer());
   const out = new Uint8Array(total);
   const reader = res.body.getReader();
   let got = 0;
@@ -77,6 +78,7 @@ self.onmessage = async (e) => {
       meta,
       sourceRate: m.sourceRate || m.rate,
       fast: !!m.options?.fast,
+      skipDrums: !!m.options?.skipDrums,
       onProgress: (p) => post({ type: "progress", ...p }),
       onPartial: (p) => {
         const now = performance.now();

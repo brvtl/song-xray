@@ -40,7 +40,12 @@ function resolve(urlPath) {
   if (ROOT_FILES.has(urlPath)) return path.join(root, urlPath.slice(1));
   for (const [prefix, dir] of mounts) {
     if (!urlPath.startsWith(prefix)) continue;
-    const rel = decodeURIComponent(urlPath.slice(prefix.length)) || "index.html";
+    let rel;
+    try {
+      rel = decodeURIComponent(urlPath.slice(prefix.length)) || "index.html";
+    } catch {
+      return null; // malformed %-escape: 404 instead of crashing the server
+    }
     const file = path.resolve(dir, rel);
     if (!file.startsWith(dir + path.sep) && file !== dir) return null; // no path traversal out of the mount
     return file;
@@ -70,7 +75,9 @@ const server = http.createServer((req, res) => {
     "Content-Length": stat.size,
   });
   if (req.method === "HEAD") return res.end();
-  fs.createReadStream(file).pipe(res);
+  fs.createReadStream(file)
+    .on("error", () => res.destroy())
+    .pipe(res);
 });
 
 const port = Number(process.argv[2] || process.env.PORT || 8080);
