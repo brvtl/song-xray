@@ -30,8 +30,15 @@ function makeVoice(ctx, out, sources, end) {
   return {
     end,
     stop(at) {
-      out.gain.cancelScheduledValues(at);
-      out.gain.setTargetAtTime(0, at, 0.01);
+      // Hold the envelope at its value at `at` (0 if the note has not started yet), then release. A bare
+      // cancelScheduledValues would also drop the setValueAtTime(0, when) and leave the gain at its intrinsic value.
+      const g = out.gain;
+      if (typeof g.cancelAndHoldAtTime === "function") g.cancelAndHoldAtTime(at);
+      else {
+        g.cancelScheduledValues(at);
+        g.setValueAtTime(g.value, at);
+      }
+      g.setTargetAtTime(0, at, 0.01);
       for (const s of sources) {
         try {
           s.stop(at + 0.08);
@@ -65,6 +72,7 @@ export function playPitched(ctx, dest, { program, pitch, velocity, when, duratio
   const dur = Math.max(0.05, duration);
   const off = when + dur;
   const env = ctx.createGain();
+  env.gain.value = 0;
   env.gain.setValueAtTime(0, when);
   env.connect(dest);
   const srcs = [];
@@ -172,6 +180,7 @@ export function playDrum(ctx, dest, { key, velocity, when }) {
   const kind = drumKind(key);
   const v = 0.15 + 0.6 * (velocity / 127);
   const env = ctx.createGain();
+  env.gain.value = 0;
   env.gain.setValueAtTime(0, when);
   env.connect(dest);
   const srcs = [];

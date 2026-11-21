@@ -8,16 +8,34 @@ const LOOKAHEAD_S = 0.2;
 const TICK_MS = 50;
 const RAMP_TAU = 0.015;
 
-/** First index i with notes[i][0] >= t (notes sorted by onset). */
-function firstOnsetAtOrAfter(notes, t) {
+/** First index i with key(i) >= t, for a non-decreasing key over [0, n). */
+function lowerBound(n, key, t) {
   let lo = 0;
-  let hi = notes.length;
+  let hi = n;
   while (lo < hi) {
     const m = (lo + hi) >> 1;
-    if (notes[m][0] < t) lo = m + 1;
+    if (key(m) < t) lo = m + 1;
     else hi = m;
   }
   return lo;
+}
+
+/**
+ * Index of the first note to schedule when (re)starting at song time `t`. Pitched notes still sounding at `t` play their
+ * remainder, so this is the first note whose end is after `t` (via the running max of ends, since notes are sorted by
+ * onset, not end); the scheduler skips any already-ended note after it. Drum hits are instantaneous: first onset >= t.
+ */
+function firstToSchedule(track, t) {
+  if (track.isDrum) return lowerBound(track.notes.length, (i) => track.notes[i][0], t);
+  return lowerBound(track.maxEnd.length, (i) => track.maxEnd[i], t + 1e-9);
+}
+
+/** Running maximum of note ends (non-decreasing, unlike the ends themselves). */
+function runningMaxEnd(notes) {
+  const out = new Float64Array(notes.length);
+  let m = -Infinity;
+  notes.forEach((n, i) => (out[i] = m = Math.max(m, n[1])));
+  return out;
 }
 
 /** Playback engine for one song. */
@@ -43,6 +61,8 @@ export class Player {
     this.sources = [];
     this.synth = [];
     this.timer = 0;
+    /** Token of a play() waiting for ctx.resume(); cleared by stop() to cancel it. */
+    this.pendingStart = null;
     /** @type {(() => void) | null} called when playback reaches the end */
     this.onEnded = null;
   }
@@ -64,7 +84,10 @@ export class Player {
     this.original = original;
     this.residual = null;
     this.stems = [];
-    this.tracks = tracks.map((t) => ({ ...t, notes: [...t.notes].sort((a, b) => a[0] - b[0]) }));
+    this.tracks = tracks.map((t) => {
+      const notes = [...t.notes].sort((a, b) => a[0] - b[0]);
+      return { ...t, notes, maxEnd: runningMaxEnd(notes) };
+    });
     this.stemBuses = tracks.map(() => this.bus());
     this.synthBuses = tracks.map(() => this.bus());
     this.synth = tracks.map(() => ({ next: 0, voices: [], on: false }));
@@ -78,7 +101,7 @@ export class Player {
    * @param {AudioBuffer} residual
    */
   setStems(stems, residual) {
-    const wasPlaying = this.playing;
+    const wasPlaying = this.playing || !!this.pendingStart;
     const t = this.time;
     this.stop();
     this.stems = stems;
@@ -106,7 +129,7 @@ export class Player {
       set(this.synthBuses[k], v);
       const s = this.synth[k];
       const on = v > 0;
-      if (on && !s.on && this.playing) s.next = firstOnsetAtOrAfter(this.tracks[k].notes, this.time);
+      if (on && !s.on && this.playing) s.next = firstToSchedule(this.tracks[k], this.time);
       if (!on && s.on) this.releaseVoices(k, now);
       s.on = on;
     });
@@ -121,8 +144,17 @@ export class Player {
 
   /** Start playback at the current offset. */
   async play() {
-    if (this.playing) return;
-    if (this.ctx.state !== "running") await this.ctx.resume();
+    if (this.playing || this.pendingStart) return;
+    const token = {};
+    this.pendingStart = token;
+    try {
+      if (this.ctx.state !== "running") await this.ctx.resume();
+    } catch (e) {
+      if (this.pendingStart === token) this.pendingStart = null;
+      throw e;
+    }
+    if (this.pendingStart !== token) return; // stopped, paused or restarted while resuming
+    this.pendingStart = null;
     if (this.offset >= this.duration - 0.01) this.offset = 0;
     const when = this.ctx.currentTime + 0.03;
     this.startedAt = when;
@@ -138,32 +170,37 @@ export class Player {
     start(this.original, this.originalBus);
     start(this.residual, this.residualBus);
     this.stems.forEach((b, k) => start(b, this.stemBuses[k]));
-    this.synth.forEach((s, k) => (s.next = firstOnsetAtOrAfter(this.tracks[k].notes, this.offset)));
+    this.synth.forEach((s, k) => (s.next = firstToSchedule(this.tracks[k], this.offset)));
     this.schedule();
+    clearInterval(this.timer);
     this.timer = setInterval(() => this.schedule(), TICK_MS);
   }
 
   /** Pause at the current position. */
   pause() {
-    if (!this.playing) return;
+    if (!this.playing) {
+      this.pendingStart = null;
+      return;
+    }
     this.offset = this.time;
     this.stop();
   }
 
   /** Toggle play / pause. */
   toggle() {
-    return this.playing ? this.pause() : this.play();
+    return this.playing || this.pendingStart ? this.pause() : this.play();
   }
 
   /** Jump to `t` seconds (keeps playing if playing). */
   seek(t) {
-    const wasPlaying = this.playing;
+    const wasPlaying = this.playing || !!this.pendingStart;
     this.stop();
     this.offset = Math.max(0, Math.min(this.duration, t));
     if (wasPlaying) this.play();
   }
 
   stop() {
+    this.pendingStart = null;
     clearInterval(this.timer);
     this.timer = 0;
     const now = this.ctx.currentTime;
@@ -185,7 +222,7 @@ export class Player {
     this.synth[k].voices = [];
   }
 
-  /** Lookahead scheduler tick: queue synth notes with onsets in [cursor, now + LOOKAHEAD_S]. */
+  /** Lookahead scheduler tick: queue synth notes with onsets in [cursor, now + LOOKAHEAD_S] (held notes: their remainder). */
   schedule() {
     if (!this.playing) return;
     const now = this.ctx.currentTime;
@@ -204,8 +241,10 @@ export class Player {
       const notes = tr.notes;
       while (s.next < notes.length && notes[s.next][0] < horizon) {
         const [on, off, pitch, vel = 100] = notes[s.next++];
-        const when = Math.max(now, this.startedAt + (on - this.offset));
-        const duration = off - Math.max(on, songNow);
+        // Before startedAt the song clock reads below offset; a held note's remainder starts with the audio, not earlier.
+        const from = Math.max(on, songNow, this.offset);
+        const when = Math.max(now, this.startedAt + (from - this.offset));
+        const duration = off - from;
         if (duration <= 0.01 && !tr.isDrum) continue;
         const v = tr.isDrum
           ? playDrum(this.ctx, this.synthBuses[k], { key: pitch, velocity: vel, when })

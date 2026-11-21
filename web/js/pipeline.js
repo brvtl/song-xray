@@ -293,7 +293,7 @@ function lowerBound(arr, v) {
 export async function transcribe(rt, audio, rate, opts) {
   const meta = opts.meta;
   const progress = makeProgress(opts.onProgress);
-  const sourceRate = opts.sourceRate || rate;
+  const sourceRate = opts.skipDrums ? null : opts.sourceRate || rate;
   const timings = {};
   let t = performance.now();
   const lap = (k) => {

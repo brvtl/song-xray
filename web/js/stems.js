@@ -168,6 +168,22 @@ const DEFAULTS = {
   progressEvery: 64,
 };
 
+// Stem output is (tracks + 1) x channels x samples x 4 bytes, held twice briefly (worker output + AudioBuffers).
+const STEREO_STEMS_MAX_BYTES = 700e6;
+const MONO_STEMS_MAX_BYTES = 900e6;
+
+/**
+ * How many channels to separate within the memory budget: 2 (stereo source that fits), 1 (mono / downmix), or 0 (too
+ * long even in mono: skip stems).
+ * @param {{channels: number, tracks: number, samples: number}} size source channel count, track count, samples per channel
+ * @returns {0 | 1 | 2}
+ */
+export function stemChannels({ channels, tracks, samples }) {
+  const bytes = (tracks + 1) * samples * 4;
+  if (channels >= 2 && 2 * bytes <= STEREO_STEMS_MAX_BYTES) return 2;
+  return bytes <= MONO_STEMS_MAX_BYTES ? 1 : 0;
+}
+
 /**
  * Split a mix into one stem per transcribed track plus a residual, by score-informed soft masking.
  *

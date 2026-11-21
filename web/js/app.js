@@ -9,11 +9,13 @@
 //   ?webgpu=1           ask the worker to try WebGPU (optional, falls back to WASM)
 //
 // window.__songXray mirrors the state for automated tests:
-//   { status: "idle"|"decoding"|"running"|"done"|"error", result, error, progress, runtime, stems: "pending"|"ready"|"error" }
+//   { status: "idle"|"decoding"|"running"|"done"|"error", result, error, progress, runtime,
+//     stems: "pending"|"ready"|"error"|"skipped" }
 
 import { Player } from "./audio/player.js";
 import { mixGains } from "./audio/mix.js";
 import { sniffSampleRate } from "./audio/sniff.js";
+import { stemChannels } from "./stems.js";
 import { writeMidi } from "./midi.js";
 import { View } from "./ui/view.js";
 import { Lanes } from "./ui/lanes.js";
@@ -25,8 +27,8 @@ import { computePeaks } from "./ui/draw.js";
 const params = new URLSearchParams(location.search);
 const MOCK = params.get("mock") === "1";
 const WEBGPU = params.get("webgpu") === "1";
-// Stem output budget: (tracks + 1) x channels x samples x 4 bytes, held twice briefly (worker output + AudioBuffers).
-const STEREO_STEMS_MAX_BYTES = 700e6;
+const DRUMS_RATE_UNKNOWN =
+  "Drums need a ≥40 kHz source; the sample rate is unknown for this format, so drums were skipped (use wav or mp3).";
 
 const $ = (id) => document.getElementById(id);
 const ui = {
@@ -73,6 +75,7 @@ const drop = initDropZone((f) => handleFile(f));
 let song = null; // { result, buffer, name, mix }
 let workers = [];
 let runId = 0;
+let songNote = ""; // a note about the current song that outlives the transient notices (e.g. drums skipped)
 
 function getPlayer() {
   if (!player) {
@@ -123,6 +126,7 @@ function reset() {
   workers = [];
   player?.load({ original: null, tracks: [], duration: 0 });
   song = null;
+  songNote = "";
   drop.reset();
   progress.hide();
   Object.assign(status, { status: "idle", result: null, error: null, progress: null, stems: "pending" });
@@ -130,16 +134,20 @@ function reset() {
 }
 
 function setNotice(text) {
-  ui.notice.hidden = !text;
-  ui.notice.textContent = text || "";
+  const full = [text, songNote].filter(Boolean).join(" ");
+  ui.notice.hidden = !full;
+  ui.notice.textContent = full;
 }
 
 /* ---------- decode ---------- */
 
 /**
  * Decode at the file's own sample rate (sniffed from its header) so the browser does not resample.
+ * `sourceRate` is null when the header could not be read (flac / ogg / m4a): decodeAudioData then resamples to the
+ * context rate, which says nothing about the recording's rate.
  * @param {ArrayBuffer} bytes
  * @param {string} name
+ * @returns {Promise<{buffer: AudioBuffer, sourceRate: number | null}>}
  */
 async function decode(bytes, name) {
   const sniffed = sniffSampleRate(bytes, name);
@@ -153,7 +161,7 @@ async function decode(bytes, name) {
     }
   }
   if (!buffer) buffer = await ctx.decodeAudioData(bytes.slice(0));
-  return { buffer, sourceRate: sniffed ?? buffer.sampleRate };
+  return { buffer, sourceRate: sniffed ?? null };
 }
 
 /** Channel mean as a fresh array (never a view of the AudioBuffer: it gets transferred to the worker). */
@@ -171,6 +179,7 @@ function monoMix(buffer) {
 
 /* ---------- inference ---------- */
 
+/** `sourceRate` null = unknown: the worker gets 0 and skipDrums (the drum model needs a known >= 40 kHz source). */
 function runInference(mono, rate, sourceRate, id) {
   return new Promise((resolve, reject) => {
     let w;
@@ -210,7 +219,8 @@ function runInference(mono, rate, sourceRate, id) {
     };
     const options = { fast: ui.fast.checked, threads: navigator.hardwareConcurrency || 4 };
     if (WEBGPU) options.webgpu = true;
-    w.postMessage({ type: "run", audio: mono, rate, sourceRate, options }, [mono.buffer]);
+    if (sourceRate == null) options.skipDrums = true;
+    w.postMessage({ type: "run", audio: mono, rate, sourceRate: sourceRate ?? 0, options }, [mono.buffer]);
   });
 }
 
@@ -229,6 +239,11 @@ async function loadMock() {
 async function handleFile(file) {
   if (status.status === "decoding" || status.status === "running") return;
   const id = ++runId;
+  // The previous song keeps no audio or stems work alive behind the new one.
+  player?.pause();
+  for (const w of workers) w.terminate();
+  workers = [];
+  songNote = "";
   try {
     status.status = "decoding";
     status.error = null;
@@ -257,7 +272,13 @@ async function handleFile(file) {
       result = await runInference(monoMix(buffer), buffer.sampleRate, sourceRate, id);
     }
     if (id !== runId) return;
-    if (typeof result.info?.drums === "string") progress.mark("drums", "skipped", "source < 40 kHz");
+    if (!MOCK && sourceRate == null) {
+      // The pipeline fell back to the decode rate; record that the source rate is actually unknown.
+      result.sourceRate = null;
+      if (result.info) result.info.drums = "skipped: source sample rate unknown for this format";
+      progress.mark("drums", "skipped", "rate unknown");
+      songNote = DRUMS_RATE_UNKNOWN;
+    } else if (typeof result.info?.drums === "string") progress.mark("drums", "skipped", "source < 40 kHz");
     status.result = result;
     status.status = "done";
     showResults(result, buffer, file.name, sourceRate);
@@ -296,7 +317,8 @@ function showResults(result, buffer, name, fileRate) {
   p.load({ original: buffer, tracks, duration });
   show("results");
   view.setDuration(duration);
-  lanes.build({ tracks, hasAudio: !!buffer, sourceRate: fileRate ?? result.sourceRate });
+  // fileRate: undefined = not given (mock), null = unknown for this file.
+  lanes.build({ tracks, hasAudio: !!buffer, sourceRate: fileRate === undefined ? result.sourceRate : fileRate });
   let overview;
   if (buffer) {
     const chans = Array.from({ length: buffer.numberOfChannels }, (_, c) => buffer.getChannelData(c));
@@ -415,7 +437,12 @@ function startStems(buffer, result, id) {
   const tracks = result.tracks ?? [];
   const n = buffer.length;
   const K = tracks.length;
-  const stereo = buffer.numberOfChannels >= 2 && (K + 1) * 2 * n * 4 <= STEREO_STEMS_MAX_BYTES;
+  const nch = stemChannels({ channels: buffer.numberOfChannels, tracks: K, samples: n });
+  if (!nch) {
+    skipStems();
+    return;
+  }
+  const stereo = nch === 2;
   const channels = stereo
     ? [buffer.getChannelData(0).slice(), buffer.getChannelData(1).slice()]
     : [buffer.numberOfChannels === 1 ? buffer.getChannelData(0).slice() : monoMix(buffer)];
@@ -441,7 +468,10 @@ function startStems(buffer, result, id) {
     progress.mark("stems", "skipped", "failed");
     progress.finish("Transcription done (stems failed)");
   };
-  w.onerror = (e) => stemsFailed(e.message || "worker error");
+  w.onerror = (e) => {
+    if (id !== runId) return done();
+    stemsFailed(e.message || "worker error");
+  };
   w.onmessage = (e) => {
     if (id !== runId) return done();
     const m = e.data || {};
@@ -471,6 +501,18 @@ function startStems(buffer, result, id) {
   );
 }
 
+/** Too long for the stem memory budget even in mono: keep the original mix + synths. */
+function skipStems() {
+  status.stems = "skipped";
+  lanes.setRowStatus("residual", "stems skipped");
+  lanes.setResidualMessage("Stems skipped for very long songs; synth and original still work.");
+  setNotice("Stems skipped for very long songs; synth and original still work.");
+  progress.compact(true);
+  progress.mark("stems", "skipped", "too long");
+  progress.finish("Transcription done (stems skipped: song too long)");
+}
+
+/** Copy the worker's stems into AudioBuffers, dropping each worker array as soon as it is copied (halves peak memory). */
 function installStems(m, rate) {
   const ctx = getPlayer().ctx;
   const toBuffer = (chs) => {
@@ -478,11 +520,17 @@ function installStems(m, rate) {
     chs.forEach((c, i) => b.copyToChannel(c, i));
     return b;
   };
-  const stems = m.stems.map(toBuffer);
+  const stems = m.stems.map((chs, k) => {
+    const b = toBuffer(chs);
+    m.stems[k] = null;
+    return b;
+  });
   const residual = toBuffer(m.residual);
+  m.residual = null;
   player.setStems(stems, residual);
   song.mix.stemsReady = true;
-  lanes.setPeaks("residual", computePeaks(m.residual, rate));
+  const resChans = Array.from({ length: residual.numberOfChannels }, (_, c) => residual.getChannelData(c));
+  lanes.setPeaks("residual", computePeaks(resChans, rate));
   lanes.setRowStatus("residual", "");
   status.stems = "ready";
   setNotice("");

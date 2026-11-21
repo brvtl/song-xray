@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { separateStems } from "../web/js/stems.js";
+import { separateStems, stemChannels } from "../web/js/stems.js";
 
 const RATE = 22050;
 
@@ -177,4 +177,15 @@ test("without a drum track, percussive clicks go to the residual, not the pitche
   );
   assert.ok(leak < 0.25 * energy(clicks), `pitched stem picked up ${leak} of click energy ${energy(clicks)}`);
   assert.ok(energy(residual[0]) > 0.7 * energy(clicks), `residual ${energy(residual[0])}`);
+});
+
+test("stem memory budget: stereo when it fits, else mono, else no stems at all", () => {
+  const min = 44100 * 60;
+  assert.equal(stemChannels({ channels: 2, tracks: 5, samples: 4 * min }), 2);
+  assert.equal(stemChannels({ channels: 1, tracks: 5, samples: 4 * min }), 1);
+  // 4 min stereo with 12 tracks: (13 x 2 x 10.6 M x 4 B) = 1.1 GB > stereo budget, mono 550 MB fits
+  assert.equal(stemChannels({ channels: 2, tracks: 12, samples: 4 * min }), 1);
+  // 20 min with 12 tracks: even mono is (13 x 52.9 M x 4 B) = 2.75 GB
+  assert.equal(stemChannels({ channels: 2, tracks: 12, samples: 20 * min }), 0);
+  assert.equal(stemChannels({ channels: 1, tracks: 12, samples: 20 * min }), 0);
 });
