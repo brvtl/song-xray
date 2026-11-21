@@ -20,3 +20,11 @@ run.log
 dist/
 build/
 .DS_Store
+
+# Song X-ray: fetched / generated (re-create with scripts/setup.sh)
+vendor/dettato/
+weights/
+web/models/
+web/vendor/ort/
+fixtures/
+parity/out/
