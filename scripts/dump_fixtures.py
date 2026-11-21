@@ -51,7 +51,7 @@ def main():
     man: dict = {"clip": os.path.relpath(a.clip, ROOT)}
 
     def save(key, arr):
-        arr = np.asarray(arr)
+        arr = np.ascontiguousarray(arr)
         np.save(os.path.join(out, f"{key}.npy"), arr)
         man.setdefault("arrays", {})[key] = [list(arr.shape), str(arr.dtype)]
 

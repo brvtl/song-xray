@@ -1,0 +1,15 @@
+Song X-ray
+Copyright 2026 the Song X-ray authors
+
+This product is a browser port of Dettato and redistributes model weights converted from it:
+
+  Dettato
+  Copyright 2026 KobiMusic
+  This product includes software and model weights developed by KobiMusic
+  (https://github.com/kobimusic/dettato, https://huggingface.co/kobimusic).
+  Licensed under the Apache License, Version 2.0 (licenses/dettato-LICENSE, licenses/dettato-NOTICE).
+
+The JavaScript in web/js/ that ports Dettato's processing (front ends, decoding, evidence repair, grouping, drum decoding) is a
+derivative work of Dettato's Python source (pinned commit 9b724251794f2bbd5eaa43e54734e5a251829130) and keeps its license.
+
+ONNX Runtime Web (Microsoft, MIT License, licenses/onnxruntime-web-LICENSE) is loaded locally from web/vendor/ort/.
