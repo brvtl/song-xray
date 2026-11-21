@@ -1,0 +1,22 @@
+# Local tooling / deps
+.venv/
+__pycache__/
+*.pyc
+node_modules/
+.mise/
+.cache/
+
+# Run artifacts (keep the brief and source)
+run.log
+*.onnx
+*.pt
+*.pth
+*.bin
+*.safetensors
+*.wav
+*.mp3
+*.ogg
+*.flac
+dist/
+build/
+.DS_Store

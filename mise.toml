@@ -1,0 +1,10 @@
+# Song X-ray in a tab. `mise install` pins Node, Python, and uv.
+# CPU only for this project — do not use the GPU.
+[tools]
+python = "3.13.18"
+uv = "0.13.6"
+node = "22.23.4"
+
+[env]
+_.python.venv = { path = ".venv" }
+CUDA_VISIBLE_DEVICES = ""
