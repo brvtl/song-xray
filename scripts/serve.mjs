@@ -13,6 +13,8 @@ import { fileURLToPath } from "node:url";
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..");
 const mounts = [
   ["/clips/", path.join(root, "clips")],
+  ["/licenses/", path.join(root, "licenses")],
+  ["/docs/", path.join(root, "docs")],
   ["/", path.join(root, "web")],
 ];
 const TYPES = {
@@ -32,7 +34,10 @@ const TYPES = {
   ".md": "text/markdown; charset=utf-8",
 };
 
+const ROOT_FILES = new Set(["/README.md", "/LICENSE", "/NOTICE"]);
+
 function resolve(urlPath) {
+  if (ROOT_FILES.has(urlPath)) return path.join(root, urlPath.slice(1));
   for (const [prefix, dir] of mounts) {
     if (!urlPath.startsWith(prefix)) continue;
     const rel = decodeURIComponent(urlPath.slice(prefix.length)) || "index.html";

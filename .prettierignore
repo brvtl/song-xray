@@ -7,3 +7,5 @@ fixtures/
 package-lock.json
 run.log
 PROMPT.md
+clips/
+parity/out/

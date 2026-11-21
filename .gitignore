@@ -28,3 +28,5 @@ web/models/
 web/vendor/ort/
 fixtures/
 parity/out/
+clips/download/
+clips/*.mp3
