@@ -90,22 +90,41 @@ function sampleReader(buf, fmt) {
 }
 
 function readWithFfmpeg(file) {
-  const probe = execFileSync("ffprobe", [
-    "-v",
-    "error",
-    "-select_streams",
-    "a:0",
-    "-show_entries",
-    "stream=sample_rate",
-    "-of",
-    "csv=p=0",
-    file,
-  ]);
-  const rate = parseInt(String(probe).trim().split(",")[0], 10) || 44100;
-  const raw = execFileSync("ffmpeg", ["-v", "error", "-i", file, "-f", "f32le", "-ac", "1", "-ar", String(rate), "-"], {
-    maxBuffer: 1 << 30,
-  });
-  return { samples: new Float32Array(raw.buffer, raw.byteOffset, raw.length / 4).slice(), rate };
+  const probe = String(
+    execFileSync("ffprobe", [
+      "-v",
+      "error",
+      "-select_streams",
+      "a:0",
+      "-show_entries",
+      "stream=sample_rate,channels",
+      "-of",
+      "csv=p=0",
+      file,
+    ]),
+  )
+    .trim()
+    .split(",");
+  const rate = parseInt(probe[0], 10) || 44100;
+  const ch = parseInt(probe[1], 10) || 1;
+  // decode every channel and average them here: ffmpeg's own "-ac 1" downmix is not the plain channel mean that the reference
+  // (soundfile, x.mean(1)) and the page (mean of the decoded channels) use
+  const raw = execFileSync(
+    "ffmpeg",
+    ["-v", "error", "-i", file, "-f", "f32le", "-ac", String(ch), "-ar", String(rate), "-"],
+    {
+      maxBuffer: 1 << 31,
+    },
+  );
+  const x = new Float32Array(raw.buffer, raw.byteOffset, raw.length / 4);
+  const n = Math.floor(x.length / ch);
+  const out = new Float32Array(n);
+  for (let i = 0; i < n; i++) {
+    let s = 0;
+    for (let c = 0; c < ch; c++) s += x[i * ch + c];
+    out[i] = s / ch;
+  }
+  return { samples: out, rate };
 }
 
 export function loadAudio(file) {

@@ -12,6 +12,9 @@ import { fileURLToPath } from "node:url";
 import { chromium, firefox } from "playwright-core";
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), "..", "..");
+// Playwright drives Firefox only through its own patched build:
+//   PLAYWRIGHT_BROWSERS_PATH=.cache/ms-playwright npx playwright-core install firefox
+const FIREFOX = path.join(ROOT, ".cache", "ms-playwright", "firefox-1572", "firefox", "firefox");
 
 function args(argv) {
   const a = {
@@ -28,7 +31,7 @@ function args(argv) {
     if (v === "--out") a.out = argv[++i];
     else if (v === "--fast") a.fast = true;
     else if (v === "--browser") a.exe = argv[++i];
-    else if (v === "--firefox") ((a.engine = "firefox"), (a.exe = "/usr/bin/firefox"));
+    else if (v === "--firefox") ((a.engine = "firefox"), (a.exe = FIREFOX));
     else if (v === "--timeout") a.timeoutS = Number(argv[++i]);
     else if (v === "--port") a.port = Number(argv[++i]);
     else a.file = v;
