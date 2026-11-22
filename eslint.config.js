@@ -2,7 +2,7 @@ import js from "@eslint/js";
 import globals from "globals";
 
 export default [
-  { ignores: ["node_modules/", "vendor/", "web/vendor/", "web/models/", "fixtures/", ".venv/"] },
+  { ignores: [".cache/", "node_modules/", "vendor/", "web/vendor/", "web/models/", "fixtures/", ".venv/"] },
   js.configs.recommended,
   {
     languageOptions: {

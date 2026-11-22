@@ -10,3 +10,4 @@ PROMPT.md
 clips/
 parity/out/
 parity/*.md
+.cache/
