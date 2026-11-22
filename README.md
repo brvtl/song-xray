@@ -154,9 +154,9 @@ Honest list, measured on this machine (AMD Ryzen 7 9800X3D, 16 threads, 60 GB RA
 
 | input | headless Chromium, 16 WASM threads | PyTorch reference, same CPU (for comparison) |
 |---|---|---|
-| 24 s synthetic clip | 65 s | 37–59 s |
-| 30 s real recording | 80 s | 43–75 s |
-| 3 min 34 s real recording (48 kHz stereo mp3) | 513 s (8.5 min), about 2.4× real time | 277 s |
+| 24 s synthetic clip | 64–65 s | 37–59 s |
+| 30 s real recording | 79–80 s | 43–75 s |
+| 3 min 34 s real recording (48 kHz stereo mp3) | 509–513 s (8.5 min), about 2.4× real time | 277 s |
 
 * About 90% of the time is the transcriber network, at roughly 3.5–4.5 s per 8 s window (one every 2 s of audio).
 * With fewer cores it scales down. With only one thread (no COOP/COEP headers, e.g. `python -m http.server`) it is about 5×
@@ -172,7 +172,7 @@ Honest list, measured on this machine (AMD Ryzen 7 9800X3D, 16 threads, 60 GB RA
 * The drum model's whole-song attention runs in query chunks.
 * Stems need (tracks + 1) × channels × samples × 4 bytes. Above about 700 MB they are computed in mono, and above about 900 MB
   they are skipped (synth and original playback still work).
-* The 3½-minute song peaked at about 1.8 GB (proportional set size of the tab's renderer process, which includes the WASM heap
+* The 3½-minute song peaked at about 1.9 GB (proportional set size of the tab's renderer process, which includes the WASM heap
   holding all models, the tap ring, the stems and the decoded audio).
 * Songs much longer than ~10 minutes have not been tried.
 

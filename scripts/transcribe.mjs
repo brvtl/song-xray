@@ -113,7 +113,7 @@ function readWithFfmpeg(file) {
     "ffmpeg",
     ["-v", "error", "-i", file, "-f", "f32le", "-ac", String(ch), "-ar", String(rate), "-"],
     {
-      maxBuffer: 1 << 31,
+      maxBuffer: 2 ** 31,
     },
   );
   const x = new Float32Array(raw.buffer, raw.byteOffset, raw.length / 4);
