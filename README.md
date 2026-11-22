@@ -16,13 +16,13 @@ Dettato-style per-instrument + drums transcription.
 
 ## Results at a glance
 
-|                                                             |                                                                                                                                                                                                                                                                                                         |
-| ----------------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **In-tab transcription**                                    | 4 Dettato models (transcriber, evidence repairer, grouper, 4 drum nets) in ONNX Runtime Web WASM, in a Web Worker                                                                                                                                                                                       |
-| **Parity with the PyTorch original**                        | 15/18 comparisons PASS on 7 clips (see [parity/REPORT.md](parity/REPORT.md)). Every clip up to 30 s passes in every mode, including the real page in Chromium: note F1 ≥ 0.999, drum hits identical, same track names. The 3 failures are track grouping on the full 3½-minute song (see _Limitations_) |
-| **Speed (this machine, 16-thread WASM, headless Chromium)** | 24 s clip in 64 s · 30 s real recording in 79 s · 3½-minute song in 8.5 min: about **2.4–2.7× real time**                                                                                                                                                                                               |
-| **Offline**                                                 | no network requests at all after load (checked in the e2e test); models are served from `web/models/`                                                                                                                                                                                                   |
-| **Controls**                                                | mute / solo / swap-for-synth per track, original mix, residual, MIDI + JSON export                                                                                                                                                                                                                      |
+|                                                             |                                                                                                                                                                                                                                                                                                                                              |
+| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **In-tab transcription**                                    | 4 Dettato models (transcriber, evidence repairer, grouper, 4 drum nets) in ONNX Runtime Web WASM, in a Web Worker                                                                                                                                                                                                                            |
+| **Parity with the PyTorch original**                        | 18/21 comparisons PASS on 8 clips (see [parity/REPORT.md](parity/REPORT.md)). Every clip up to 60 s passes in every mode, including the real page in Chromium: note F1 ≥ 0.998, drum hits identical, same track names. The 3 failures are track grouping on the full 3½-minute song (see _Limitations_); its notes and drum hits still match |
+| **Speed (this machine, 16-thread WASM, headless Chromium)** | 24 s clip in 55–65 s · 30 s real recording in 69–80 s · 60 s in 2 min · 3½-minute song in 7–8.5 min: about **2–2.7× real time**                                                                                                                                                                                                              |
+| **Offline**                                                 | no network requests at all after load (checked in the e2e test); models are served from `web/models/`                                                                                                                                                                                                                                        |
+| **Controls**                                                | mute / solo / swap-for-synth per track, original mix, residual, MIDI + JSON export                                                                                                                                                                                                                                                           |
 
 ## What's new here
 
@@ -73,7 +73,8 @@ on CPU with one command.
 The page needs a static server that sends `Cross-Origin-Opener-Policy: same-origin` and
 `Cross-Origin-Embedder-Policy: require-corp`. That makes the page cross-origin isolated, which enables `SharedArrayBuffer`, which
 ONNX Runtime Web needs for multi-threaded WASM. `npm run serve` (`scripts/serve.mjs`, no dependencies) does this. A plain
-`python -m http.server` also works but runs single-threaded and about 5× slower. The page shows which one you got in the badge
+`python -m http.server` also works but runs single-threaded, which is about 5× slower (measured on the transcriber network
+under Node: 19 s vs 3.5 s per window with 1 vs 8 threads; not timed in a browser). The page shows which one you got in the badge
 at the top right.
 
 Opening `web/index.html` from `file://` does not work, because browsers do not let a `file://` page load WASM or workers that
@@ -118,15 +119,16 @@ npm test
 
 Full report: [parity/REPORT.md](parity/REPORT.md) (generated by `parity/parity.py`).
 
-| clip             | what it is                                                 | reference tracks                                                                                                  | maps max abs diff (js) | pitched-note F1 | track agreement      | drums    |
-| ---------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------- | --------------- | -------------------- | -------- |
-| band.wav         | synth piano + FM bass + flute + drum kit, 24 s             | piano 63, electric bass 43, electric guitar 30, drums 153                                                         | 7.5e-5                 | 1.000           | 1.000                | 153/153  |
-| duet.wav         | flute + bass, 20 s (orchestral drum router)                | electric piano 65, electric bass 32                                                                               | 1.7e-5                 | 1.000           | 1.000                | 0/0      |
-| piano.wav        | solo arpeggios, 10 s (repairer drops a note)               | electric piano 49                                                                                                 | 4.1e-6                 | 1.000           | 1.000                | 0/0      |
-| sousa_30s.wav    | **real recording**: US Marine Band, public domain          | trombone 272, brass section 198, piano 117, string ensemble 94, drums 229                                         | 1.4e-4                 | 0.999           | 0.997                | 229/229  |
-| band.mp3         | band as 192 kbit/s mp3 (decoder delay)                     | as band                                                                                                           | 8.6e-5                 | 1.000           | 1.000                | 153/153  |
-| band_detuned.wav | band 35 cents sharp (exercises retuning)                   | as band                                                                                                           | 7.6e-5                 | 1.000           | 1.000                | 153/153  |
-| sousa_full.mp3   | **real recording**, whole piece, 3 min 34 s, 48 kHz stereo | trombone 940, brass section 869, piano 552, double bass 511, string ensemble 364, harp 203, flute 151, drums 1071 | 5.9e-4                 | 0.995–0.997     | **0.80–0.90 (FAIL)** | F1 0.994 |
+| clip             | what it is                                                 | reference tracks                                                                                                  | maps max abs diff (js) | pitched-note F1 | track agreement      | drums     |
+| ---------------- | ---------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------- | ---------------------- | --------------- | -------------------- | --------- |
+| band.wav         | synth piano + FM bass + flute + drum kit, 24 s             | piano 63, electric bass 43, electric guitar 30, drums 153                                                         | 7.5e-5                 | 1.000           | 1.000                | 153/153   |
+| duet.wav         | flute + bass, 20 s (orchestral drum router)                | electric piano 65, electric bass 32                                                                               | 1.7e-5                 | 1.000           | 1.000                | 0/0       |
+| piano.wav        | solo arpeggios, 10 s (repairer drops a note)               | electric piano 49                                                                                                 | 4.1e-6                 | 1.000           | 1.000                | 0/0       |
+| sousa_30s.wav    | **real recording**: US Marine Band, public domain          | trombone 272, brass section 198, piano 117, string ensemble 94, drums 229                                         | 1.4e-4                 | 0.999           | 0.997                | 229/229   |
+| band.mp3         | band as 192 kbit/s mp3 (decoder delay)                     | as band                                                                                                           | 8.6e-5                 | 1.000           | 1.000                | 153/153   |
+| band_detuned.wav | band 35 cents sharp (exercises retuning)                   | as band                                                                                                           | 7.6e-5                 | 1.000           | 1.000                | 153/153   |
+| sousa_60s.mp3    | **real recording**, first minute, 192 kbit/s mp3           | brass section 312, trombone 329, accordion 165, piano 144, bassoon 188, synth lead 158, drums 470                 | 4.3e-4                 | 0.998–1.000     | 0.994–0.998          | 470/470   |
+| sousa_full.mp3   | **real recording**, whole piece, 3 min 34 s, 48 kHz stereo | trombone 940, brass section 869, piano 552, double bass 511, string ensemble 364, harp 203, flute 151, drums 1071 | 5.9e-4                 | 0.995–0.997     | **0.80–0.90 (FAIL)** | 1071/1071 |
 
 The Node modes are **js-same** (the browser pipeline fed the reference's own resampled samples, which isolates models and port)
 and **js** (the pipeline doing its own decode and resampling). The **browser** mode is the result the real page produced in
@@ -145,8 +147,9 @@ headless Chromium. All three pass on every clip except the full-length song:
 - **Full 3½-minute song:**
   - Every transcriber note is identical: 4797/4797.
   - Every repaired note is identical: 4718/4718.
-  - Drums F1 is 0.994: about 1% of hits near the threshold flip, from ORT-vs-torch float differences in the orchestral expert
-    graphs (~1e-3 on their logits).
+  - Drum hits are identical (1071/1071). An earlier export lost precision here: the orchestral experts' CQ branch reduces
+    over the whole song, and onnxruntime's float32 reductions drifted with song length (0.75 in WASM). The export now does
+    those reductions in float64, and the experts match torch to 4e-6 on the full song.
   - Track grouping agrees on only 80–90% of notes depending on the mode, and fails the check. See _Limitations_ for the
     cause, and for the evidence that the reference itself is unstable here.
 
@@ -154,17 +157,18 @@ headless Chromium. All three pass on every clip except the full-length song:
 
 Honest list, measured on this machine (AMD Ryzen 7 9800X3D, 16 threads, 60 GB RAM, Arch Linux, CPU only) unless stated.
 
-**Speed (WASM, CPU).** In the browser it takes about 2.4–2.7× the song's length:
+**Speed (WASM, CPU).** In the browser it takes about 2–2.7× the song's length (the spread is machine load):
 
-| input                                         | headless Chromium, 16 WASM threads        | PyTorch reference, same CPU (for comparison) |
-| --------------------------------------------- | ----------------------------------------- | -------------------------------------------- |
-| 24 s synthetic clip                           | 64–65 s                                   | 37–59 s                                      |
-| 30 s real recording                           | 79–80 s                                   | 43–75 s                                      |
-| 3 min 34 s real recording (48 kHz stereo mp3) | 509–513 s (8.5 min), about 2.4× real time | 277 s                                        |
+| input                                         | headless Chromium, 16 WASM threads            | PyTorch reference, same CPU (for comparison) |
+| --------------------------------------------- | --------------------------------------------- | -------------------------------------------- |
+| 24 s synthetic clip                           | 55–65 s                                       | 37–59 s                                      |
+| 30 s real recording                           | 69–80 s                                       | 43–75 s                                      |
+| 60 s real recording (mp3)                     | 123 s                                         | 52 s                                         |
+| 3 min 34 s real recording (48 kHz stereo mp3) | 420–513 s (7–8.5 min), about 2–2.4× real time | 180–277 s                                    |
 
 - About 90% of the time is the transcriber network, at roughly 3.5–4.5 s per 8 s window (one every 2 s of audio).
-- With fewer cores it scales down. With only one thread (no COOP/COEP headers, e.g. `python -m http.server`) it is about 5×
-  slower.
+- With fewer cores it scales down. With only one thread (no COOP/COEP headers, e.g. `python -m http.server`) expect about 5×
+  slower. That figure is from the Node benchmark of the transcriber network; a single-threaded browser run was not timed.
 - **Fast mode** (`?fast=1` or the toggle) runs half the windows. On the 30 s recording it took 46 s instead of ~68 s, but it is
   noticeably less faithful (note F1 0.96 against the reference, and one of four tracks merged away). Treat it as a preview.
 - **WebGPU:** `?webgpu=1` loads ONNX Runtime's WebGPU build. It is **untested**: this project was built and verified on CPU
@@ -186,7 +190,7 @@ Honest list, measured on this machine (AMD Ryzen 7 9800X3D, 16 threads, 60 GB RA
 - On short and medium clips the port reproduces the reference practically exactly: maps within 1.4e-4, every transcriber note
   identical, drums identical, same tracks (see the parity table above).
 - **Long, dense real music is where track grouping diverges.** On the full 3½-minute Marine Band recording, every transcriber
-  note (4797/4797) and every repaired note (4718/4718) is identical. Pitched-note F1 is 0.995–0.997 and drum F1 0.994. But
+  note (4797/4797) and every repaired note (4718/4718) is identical. Pitched-note F1 is 0.995–0.997 and the drum hits are identical. But
   the grouping into tracks agrees on only 80–90% of notes: the reference's 364-note "string ensemble" track is merged into the
   trombone and other tracks, and in one mode a "french horn" track appears.
 - What is established about the cause:
