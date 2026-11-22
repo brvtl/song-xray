@@ -13,6 +13,7 @@ Reads the arrays scripts/dump_fixtures.py wrote (it does not rerun the transcrib
     song_windows cases.
 CPU only.
 """
+
 from __future__ import annotations
 
 import json
@@ -26,13 +27,12 @@ os.environ.setdefault("DETTATO_WEIGHTS", os.path.join(ROOT, "weights"))
 
 import numpy as np  # noqa: E402
 import torch  # noqa: E402
-from scipy.cluster.hierarchy import fcluster, linkage  # noqa: E402
-from scipy.optimize import linear_sum_assignment  # noqa: E402
-from scipy.special import erf  # noqa: E402
-
 from dettato.grouper import Grouper  # noqa: E402
 from dettato.grouper import core as GC  # noqa: E402
 from dettato.grouper import decode as GD  # noqa: E402
+from scipy.cluster.hierarchy import fcluster, linkage  # noqa: E402
+from scipy.optimize import linear_sum_assignment  # noqa: E402
+from scipy.special import erf  # noqa: E402
 
 CLIPS = ("band", "duet", "piano")
 
@@ -178,8 +178,13 @@ def synthetic_decodes(grp):
         save_json(f"{name}_groups_stable", [[int(k), np.asarray(ids).tolist()] for k, ids in groups_st])
         save_json(f"{name}_chain", tr.tolist())
         same = [[k, list(map(int, i))] for k, i in groups] == [[k, list(map(int, i))] for k, i in groups_st]
-        info[name] = dict(n=n, windows=len(pred["wins"]), tracklets=int(len(np.unique(tr[tr >= 0]))), stable_same=same,
-                          groups=[(int(k), len(i)) for k, i in groups])
+        info[name] = dict(
+            n=n,
+            windows=len(pred["wins"]),
+            tracklets=int(len(np.unique(tr[tr >= 0]))),
+            stable_same=same,
+            groups=[(int(k), len(i)) for k, i in groups],
+        )
     save_json("syn_info", info)
     print("synthetic:", json.dumps(info), file=sys.stderr)
 
@@ -214,7 +219,7 @@ def cluster_refs():
     for n, dur, nmax in [(0, 10, 768), (1, 10, 768), (50, 30, 768), (300, 60, 40), (500, 100, 64), (200, 20, 30), (90, 200, 768)]:
         on = np.sort(rng.uniform(-0.05, dur, n)).astype(np.float32)
         if n > 20:
-            on[5:9] = on[5]          # duplicate onsets
+            on[5:9] = on[5]  # duplicate onsets
         jobs = GC.song_windows(on, 24.0, 12.0, nmax)
         sw.append(dict(on=on.astype(np.float64).tolist(), nmax=nmax, jobs=[[float(t), s.tolist()] for t, s in jobs]))
     save_json("cluster_refs", dict(linkage=link, lsap=lsap, erf=dict(x=xs.tolist(), y=erf(xs).tolist()), windows=sw))

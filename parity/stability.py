@@ -19,11 +19,11 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 import numpy as np
 import torch
-from parity import track_stats
-
 from dettato import Dettato
 from dettato import audio as A
 from dettato.grouper import front as FR
+
+from parity import track_stats
 
 
 def pcen_padded(X, s=0.025, alpha=0.98, delta=2.0, r=0.5, eps=1e-6, K=200):

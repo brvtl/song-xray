@@ -22,7 +22,7 @@ def main():
         d = os.path.join(ROOT, "fixtures", clip)
         if not os.path.exists(os.path.join(d, "manifest.json")):
             continue
-        ld = lambda key: np.load(os.path.join(d, f"{key}.npy"))  # noqa: E731
+        ld = lambda key, d=d: np.load(os.path.join(d, f"{key}.npy"))  # noqa: E731
         k = np.zeros(len(ld("rep_in_on")), NOTE_DT)
         for f in ("pitch", "vel", "on", "off"):
             k[f] = ld(f"rep_in_{f}")
