@@ -45,8 +45,7 @@ Dettato-style per-instrument + drums transcription.
 
 ## Setup
 
-Requirements: [mise](https://mise.jdx.dev), git, ffmpeg (only for the parity script's mp3 variant), about 1.5 GB of disk. CPU
-only: nothing here installs or uses CUDA or GPU wheels.
+Requirements: [mise](https://mise.jdx.dev), git, ffmpeg (for the real-clip fetch script, the parity script's mp3 variant and the Node runner's mp3 input), about 1.5 GB of disk. The end-to-end browser test expects Chromium at `/usr/bin/chromium` (override with `--browser`). CPU only: nothing here installs or uses CUDA or GPU wheels.
 
 ```bash
 scripts/setup.sh      # toolchain (mise), .venv with CPU-only PyTorch, Dettato code + weights (pinned), ONNX export, ORT web assets, clips
@@ -155,7 +154,7 @@ headless Chromium. All three pass on every clip except the full-length song:
 
 Honest list, measured on this machine (AMD Ryzen 7 9800X3D, 16 threads, 60 GB RAM, Arch Linux, CPU only) unless stated.
 
-**Speed (WASM, CPU).** In the browser it is a little slower than real time:
+**Speed (WASM, CPU).** In the browser it takes about 2.4–2.7× the song's length:
 
 | input                                         | headless Chromium, 16 WASM threads        | PyTorch reference, same CPU (for comparison) |
 | --------------------------------------------- | ----------------------------------------- | -------------------------------------------- |
@@ -190,13 +189,19 @@ Honest list, measured on this machine (AMD Ryzen 7 9800X3D, 16 threads, 60 GB RA
   note (4797/4797) and every repaired note (4718/4718) is identical. Pitched-note F1 is 0.995–0.997 and drum F1 0.994. But
   the grouping into tracks agrees on only 80–90% of notes: the reference's 364-note "string ensemble" track is merged into the
   trombone and other tracks, and in one mode a "french horn" track appears.
-- The cause is localized. It is the grouper's PCEN front end on the zero-padded audio of the first and last 24 s windows, where
-  the JS float32 FFT convolution is noisier than torch's (`parity/grouper_front_check.mjs`). The JS decode itself reproduces
-  the reference's groups exactly when given the reference's predictions.
-- This grouping is fragile in the reference too. Adding −100 dB dither to the input changes the _reference's own_ tracks on this
-  song (one seed drops "harp" and invents "bassoon", 0.936 agreement with itself). See [parity/STABILITY.md](parity/STABILITY.md).
-  So expect instrument tracks on long, dense songs to differ from the Python output about as much as two decodes of the same mp3
-  differ.
+- What is established about the cause:
+  - The divergence starts in the grouper stage. The JS decode reproduces the reference's groups exactly when fed the
+    reference's per-note predictions.
+  - Substituting the JS predictions of only the first and last 24 s grouper windows (the ones that include zero-padded audio
+    before and after the song) into the reference's predictions reproduces it (`parity/grouper_front_check.mjs`).
+  - In those padded frames the JS PCEN front end differs visibly from torch's.
+  - Switching the JS PCEN convolution to float64 does **not** recover the reference's tracks. So the exact root cause inside
+    those windows is still open.
+- The reference's own grouping of this song is also sensitive. With −100 dB dither added to the input, its tracks agree with
+  its unperturbed run at 0.936 (one seed: "harp" disappears, "bassoon" appears) and 0.987 (another seed). See
+  [parity/STABILITY.md](parity/STABILITY.md).
+  - The port agrees with the reference at 0.80–0.90, which is clearly lower than that self-variation.
+  - This is a single long song, so treat instrument tracks on long, dense music as approximate.
 - The evidence repairer's ONNX graph flips a near-tied argmax for 1–3 notes per clip (onset or end moved by one 5 ms bin).
 - A note that lasts more than ~8 s past the end of its 8 s block would be cut by the streaming pass. This never happened in the
   tests (`notesCutAtStreamFrontier` in the result info counts them).

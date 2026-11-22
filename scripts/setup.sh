@@ -22,6 +22,7 @@ declare -A HF_REVS=(
 step() { printf '\n\033[1m==> %s\033[0m\n' "$*"; }
 
 step "toolchain (mise: Python 3.13, uv, Node 22)"
+mise trust --quiet "$PWD/mise.toml"   # a fresh clone's mise.toml is untrusted until this
 mise install
 
 step "Python venv with CPU-only PyTorch"

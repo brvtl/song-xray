@@ -400,13 +400,41 @@ class TrunkB(nn.Module):
         return h, self.net.on(h), self.net.vel(h)
 
 
+def _group_norm(x, gn):
+    """nn.GroupNorm with its statistics reduced in float64. A group here spans the whole song (millions of values); onnxruntime
+    reduces in plain float32, which drifts with song length (native ORT vs torch: 5e-4 at 24 s, 0.057 at 3.5 min on the CQ
+    branch's output; onnxruntime-web's WASM kernels: 0.75). torch reduces pairwise and stays accurate. Same math, float64 sums."""
+    B, C, T, Fq = x.shape
+    xs = x.reshape(B, gn.num_groups, -1)
+    xd = xs.double()
+    mu = xd.mean(-1, keepdim=True)
+    var = ((xd - mu) ** 2).mean(-1, keepdim=True)
+    xs = ((xd - mu) / torch.sqrt(var + gn.eps)).float()
+    return xs.reshape(B, C, T, Fq) * gn.weight[None, :, None, None] + gn.bias[None, :, None, None]
+
+
 class CQ(nn.Module):
+    """CQBranch.forward with its whole-song reductions (input mean, group-norm statistics) in float64 (see _group_norm)."""
+
     def __init__(self, ex):
         super().__init__()
         self.cq = ex.cq
 
     def forward(self, xc):
-        return self.cq(xc)
+        m = self.cq
+        xc = xc.float()
+        xc = (xc - xc.double().mean(dim=(1, 2), keepdim=True).float()) / 4.0  # whole-song mean: float64 sum (see _group_norm)
+        lo = xc.amin(dim=(1, 2), keepdim=True)
+
+        def shift(k):
+            return torch.cat([xc[..., k:], lo.expand(-1, xc.shape[1], k)], -1)
+
+        z = torch.stack([xc, shift(14), shift(24)], 1)
+        z = F.silu(_group_norm(m.c1(z), m.n1))
+        z = F.silu(_group_norm(m.c2(z), m.n2))
+        z = F.silu(_group_norm(m.c3(z), m.n3)) + z
+        B, C, T, Fq = z.shape
+        return F.silu(m.proj(z.permute(0, 2, 1, 3).reshape(B, T, C * Fq)))
 
 
 class AdaptA(nn.Module):
@@ -512,6 +540,7 @@ def export_drums(out_dir):
             cq = CQ(ex).eval()
             pth = export(cq, (x[:, :T1, 160:],), f"{out_dir}/drums/ex{i}_cq.onnx", ["xc"], ["cq"], {"xc": {1: "T"}, "cq": {1: "T2"}})
             check(pth, cq, [(x[:, :T1, 160:],), (x[:, :T2, 160:],)], ["xc"], 1e-4, f"ex{i}_cq")
+            assert torch.allclose(cq(x[:, :T2, 160:]), ex.cq(x[:, :T2, 160:]), atol=1e-4), "CQ wrapper differs from CQBranch"
             cq1, cq2 = cq(x[:, :T1, 160:]), cq(x[:, :T2, 160:])
             aa = AdaptA(ex).eval()
             pth = export(

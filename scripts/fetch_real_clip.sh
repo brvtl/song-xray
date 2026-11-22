@@ -7,7 +7,7 @@ set -euo pipefail
 cd "$(dirname "$0")/.."
 URL='https://upload.wikimedia.org/wikipedia/commons/e/ed/Sousa%27s_%22The_Stars_and_Stripes_Forever%22_-_United_States_Marine_Band_%282017%29.mp3'
 mkdir -p clips/download
-[ -f clips/download/sousa_full.mp3 ] || curl -sSfL -A "song-xray-demo/0.1 (local demo)" -o clips/download/sousa_full.mp3 "$URL"
+[ -f clips/download/sousa_full.mp3 ] || curl -sSfL -A "curl" -o clips/download/sousa_full.mp3 "$URL"
 ffmpeg -v error -y -ss 5 -t 30 -i clips/download/sousa_full.mp3 -ac 1 -ar 44100 clips/sousa_30s.wav
 ffmpeg -v error -y -ss 5 -t 60 -i clips/download/sousa_full.mp3 -c:a libmp3lame -b:a 192k clips/sousa_60s.mp3
 cp clips/download/sousa_full.mp3 clips/sousa_full.mp3   # the whole 3:34 recording (48 kHz stereo), for the long-song test

@@ -3,7 +3,8 @@
 //   node tests/e2e/browser.mjs clips/band.wav [--out parity/out/band_wav/browser.json] [--fast] [--browser /usr/bin/chromium]
 //
 // Starts scripts/serve.mjs, opens the page, drops the file through the file input, waits for the transcription, checks that
-// the page reports cross-origin isolation + WASM threads, that every track has a piano roll and that mute / solo / synth toggle,
+// the page reports cross-origin isolation + WASM threads, that every track has a piano roll, that playback runs and that
+// Synth / Solo / Mute change the applied gains (and schedule synth voices), with no page errors,
 // and writes the result JSON the page produced (for parity/parity.py --browser) plus a screenshot next to it.
 import { spawn } from "node:child_process";
 import fs from "node:fs";
@@ -52,6 +53,47 @@ async function startServer(port) {
   return p;
 }
 
+/** Press play, then Synth / Solo / Mute on the first two tracks, and check the gains the page applies and that it plays. */
+async function checkControls(page, check, nTracks) {
+  const probe = () =>
+    page.evaluate(() => ({
+      time: window.__songXray.time,
+      playing: window.__songXray.playing,
+      gains: window.__songXray.gains,
+      voices: window.__songXray.synthVoices,
+    }));
+  await page.click("#play");
+  await page.waitForTimeout(2000);
+  let p = await probe();
+  check(p.playing && p.time > 0.8, `play: playhead advanced to ${p.time.toFixed(2)} s`);
+  const lanes = page.locator(".lane:has(.tbtn.y)"); // the transcribed tracks (Original / Residual have no Synth button)
+  check((await lanes.count()) === nTracks, `${nTracks} track rows with Mute / Solo / Synth`);
+  await lanes.nth(0).locator(".tbtn.y").click();
+  await page.waitForTimeout(1200);
+  p = await probe();
+  check(p.gains.stems[0] === 0 && p.gains.synths[0] > 0, "synth swap: track 1 stem silent, its synth audible");
+  check(p.voices[0] > 0, `synth swap: ${p.voices[0]} synth voices scheduled for track 1`);
+  if (nTracks > 1) {
+    await lanes.nth(1).locator(".tbtn.s").click();
+    await page.waitForTimeout(300);
+    p = await probe();
+    const others = p.gains.stems.some((g, k) => k !== 1 && g > 0) || p.gains.synths.some((g, k) => k !== 1 && g > 0);
+    check(p.gains.stems[1] > 0 && !others && p.gains.residual === 0, "solo track 2: only track 2 audible");
+    await lanes.nth(1).locator(".tbtn.s").click(); // un-solo
+    await lanes.nth(1).locator(".tbtn.m").click();
+    await page.waitForTimeout(300);
+    p = await probe();
+    check(
+      p.gains.stems[1] === 0 && p.gains.synths[1] === 0 && p.gains.synths[0] > 0,
+      "mute track 2: silent, others back",
+    );
+  }
+  await page.click("#play");
+  await page.waitForTimeout(300);
+  p = await probe();
+  check(!p.playing, "pause");
+}
+
 async function main() {
   const a = args(process.argv.slice(2));
   const server = await startServer(a.port);
@@ -73,7 +115,9 @@ async function main() {
       const u = new URL(r.url());
       if (!["localhost", "127.0.0.1"].includes(u.hostname) && u.protocol.startsWith("http")) offsite.push(r.url());
     });
-    page.on("console", (m) => m.type() === "error" && console.error("[page]", m.text()));
+    const pageErrors = [];
+    page.on("console", (m) => m.type() === "error" && (pageErrors.push(m.text()), console.error("[page]", m.text())));
+    page.on("pageerror", (e) => (pageErrors.push(String(e)), console.error("[page]", String(e))));
     await page.goto(`http://localhost:${a.port}/${a.fast ? "?fast=1" : ""}`);
     await page.waitForFunction(() => window.__songXray, null, { timeout: 30000 });
     const iso = await page.evaluate(() => self.crossOriginIsolated);
@@ -120,6 +164,8 @@ async function main() {
     check(lanes >= nTracks, `${lanes} canvases for ${nTracks} tracks`);
     await page.waitForFunction(() => window.__songXray.stems !== "pending", null, { timeout: 300000 }).catch(() => {});
     check((await page.evaluate(() => window.__songXray.stems)) === "ready", "stems computed");
+    await checkControls(page, check, nTracks);
+    check(pageErrors.length === 0, `no page errors (${pageErrors.slice(0, 2).join(" | ")})`);
     await page.screenshot({ path: a.out.replace(/\.json$/, ".png"), fullPage: true });
     check(offsite.length === 0, `no off-site requests (${offsite.slice(0, 3).join(", ")})`);
     console.error(`wall time ${wall.toFixed(1)} s -> ${path.relative(ROOT, a.out)}`);

@@ -53,6 +53,12 @@ const status = {
   stems: "pending",
 };
 window.__songXray = status;
+// read-only probes for the end-to-end test (tests/e2e/browser.mjs): playhead, last applied gains, live synth voices per track
+Object.defineProperties(status, {
+  time: { get: () => player?.time ?? 0 },
+  playing: { get: () => !!player?.playing },
+  synthVoices: { get: () => (player?.synth || []).map((s) => s.voices.length) },
+});
 
 let player = null;
 const view = new View();
@@ -411,6 +417,7 @@ function applyMix() {
   if (!song || !player) return;
   const g = mixGains(song.mix);
   player.setGains(g);
+  status.gains = g;
   transport.setMode(g.mode);
   const recorded = g.original > 0 || g.residual > 0 || g.stems.some((x) => x > 0);
   lanes.setRowState("original", { ...song.mix.original, audible: recorded });
