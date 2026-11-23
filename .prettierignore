@@ -6,7 +6,6 @@ fixtures/
 .venv/
 package-lock.json
 run.log
-PROMPT.md
 clips/
 parity/out/
 parity/*.md

@@ -14,15 +14,19 @@ Dettato-style per-instrument + drums transcription.
 
 > This is a local demo, not a hosted service. It is built to run on your own machine from a local static server.
 
+![Song X-ray after transcribing a 30 s public-domain Marine Band recording: piano rolls for trombone, brass section, piano and string ensemble, plus drums](docs/screenshot.png)
+
+_A 30 s public-domain recording (U.S. Marine Band, "The Stars and Stripes Forever") transcribed in Chrome with the machine's network cut to loopback only._
+
 ## Results at a glance
 
-|                                                             |                                                                                                                                                                                                                                                                                                                                              |
-| ----------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **In-tab transcription**                                    | 4 Dettato models (transcriber, evidence repairer, grouper, 4 drum nets) in ONNX Runtime Web WASM, in a Web Worker                                                                                                                                                                                                                            |
-| **Parity with the PyTorch original**                        | 18/21 comparisons PASS on 8 clips (see [parity/REPORT.md](parity/REPORT.md)). Every clip up to 60 s passes in every mode, including the real page in Chromium: note F1 ≥ 0.998, drum hits identical, same track names. The 3 failures are track grouping on the full 3½-minute song (see _Limitations_); its notes and drum hits still match |
-| **Speed (this machine, 16-thread WASM, headless Chromium)** | 24 s clip in 55–65 s · 30 s real recording in 69–80 s · 60 s in 2 min · 3½-minute song in 7–8.5 min: about **2–2.7× real time**                                                                                                                                                                                                              |
-| **Offline**                                                 | no network requests at all after load (checked in the e2e test); models are served from `web/models/`                                                                                                                                                                                                                                        |
-| **Controls**                                                | mute / solo / swap-for-synth per track, original mix, residual, MIDI + JSON export                                                                                                                                                                                                                                                           |
+|                                                            |                                                                                                                                                                                                                                                                                                                                              |
+| ---------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **In-tab transcription**                                   | 4 Dettato models (transcriber, evidence repairer, grouper, 4 drum nets) in ONNX Runtime Web WASM, in a Web Worker                                                                                                                                                                                                                            |
+| **Parity with the PyTorch original**                       | 18/21 comparisons PASS on 8 clips (see [parity/REPORT.md](parity/REPORT.md)). Every clip up to 60 s passes in every mode, including the real page in Chromium: note F1 ≥ 0.998, drum hits identical, same track names. The 3 failures are track grouping on the full 3½-minute song (see _Limitations_); its notes and drum hits still match |
+| **Speed (16-thread desktop CPU, WASM, headless Chromium)** | 24 s clip in 55–65 s · 30 s real recording in 69–80 s · 60 s in 2 min · 3½-minute song in 7–8.5 min: about **2–2.7× real time**                                                                                                                                                                                                              |
+| **Offline**                                                | no network requests at all after load (checked in the e2e test); models are served from `web/models/`                                                                                                                                                                                                                                        |
+| **Controls**                                               | mute / solo / swap-for-synth per track, original mix, residual, MIDI + JSON export                                                                                                                                                                                                                                                           |
 
 ## What's new here
 
@@ -115,7 +119,7 @@ Per-module tests against the reference's own intermediate arrays:
 npm test
 ```
 
-### Results (CPU, this machine)
+### Results (CPU)
 
 Full report: [parity/REPORT.md](parity/REPORT.md) (generated by `parity/parity.py`).
 
@@ -155,7 +159,7 @@ headless Chromium. All three pass on every clip except the full-length song:
 
 ## Limitations
 
-Honest list, measured on this machine (AMD Ryzen 7 9800X3D, 16 threads, 60 GB RAM, Arch Linux, CPU only) unless stated.
+Measured on an AMD Ryzen 7 9800X3D (16 threads, 60 GB RAM, Arch Linux, CPU only) unless stated.
 
 **Speed (WASM, CPU).** In the browser it takes about 2–2.7× the song's length (the spread is machine load):
 
@@ -167,7 +171,8 @@ Honest list, measured on this machine (AMD Ryzen 7 9800X3D, 16 threads, 60 GB RA
 | 3 min 34 s real recording (48 kHz stereo mp3) | 420–513 s (7–8.5 min), about 2–2.4× real time | 180–277 s                                    |
 
 - About 90% of the time is the transcriber network, at roughly 3.5–4.5 s per 8 s window (one every 2 s of audio).
-- With fewer cores it scales down. With only one thread (no COOP/COEP headers, e.g. `python -m http.server`) expect about 5×
+- With fewer cores it slows down. On an 8-vCPU Linux VM (Chrome 156, 8 WASM threads) the 30 s recording took about
+  2½ min, about 5× real time. With only one thread (no COOP/COEP headers, e.g. `python -m http.server`) expect about 5×
   slower. That figure is from the Node benchmark of the transcriber network; a single-threaded browser run was not timed.
 - **Fast mode** (`?fast=1` or the toggle) runs half the windows. On the 30 s recording it took 46 s instead of ~68 s, but it is
   noticeably less faithful (note F1 0.96 against the reference, and one of four tracks merged away). Treat it as a preview.
@@ -230,6 +235,8 @@ Residual row holds what no track explains. Stems + residual always add up to the
 - Firefox 159 (Playwright build, headless) on band.wav: same 4 tracks as the reference (piano 63, electric bass 43,
   electric guitar 30, drums 153) in 67 s, cross-origin isolated, 16 WASM threads, stems computed. Only this clip was run in
   Firefox.
+- Google Chrome 156 (headed, under Xvfb, 8 threads) on the 30 s recording, with the network cut to loopback only:
+  the same 4 instrument tracks and 229 drum hits as the reference (note counts within 2 per track).
 - Not tested: Safari, mobile browsers, real (non-headless) GPU-composited windows. The page needs ES modules in workers and
   `OfflineAudioContext`. Multi-threading needs cross-origin isolation.
 
@@ -237,8 +244,6 @@ Residual row holds what no track explains. Stems + residual always add up to the
 
 - Opening `index.html` from `file://` does not work. Use the bundled server or any static server.
 - `setup.sh` needs network once (PyPI, GitHub, Hugging Face, npm). The page itself never does.
-- While building this, I once ran `nvidia-smi` by mistake (output discarded). No GPU computation, conversion or check was ever
-  run. Everything (export, parity, tests) ran on CPU with `CUDA_VISIBLE_DEVICES=""`.
 
 ## License and credit
 

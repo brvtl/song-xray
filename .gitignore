@@ -30,3 +30,8 @@ fixtures/
 parity/out/
 clips/download/
 clips/*.mp3
+
+# Local agent / pipeline files (not part of the project)
+.claude/
+PROMPT.md
+.watch-reported
